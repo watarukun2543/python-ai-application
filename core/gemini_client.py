@@ -2,6 +2,8 @@
 
 import os
 import ssl
+import tomllib
+from pathlib import Path
 
 import certifi
 import httpx
@@ -9,12 +11,31 @@ import streamlit as st
 from google import genai
 from google.genai import types
 
+# このファイル(core/)の1つ上がプロジェクトルート。
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
 DEFAULT_MODEL = "gemini-3.6-flash"
 AVAILABLE_MODELS = ["gemini-3.6-flash"]
 
 
 class GeminiConfigError(RuntimeError):
     """APIキーが設定されていない場合に送出される。"""
+
+
+def _key_from_project_secrets() -> str | None:
+    """`streamlit run` の起動ディレクトリに関係なく、プロジェクト同梱の
+    .streamlit/secrets.toml から直接キーを読む。st.secrets は
+    カレントディレクトリ基準でファイルを探すため、プロジェクト外から
+    起動されると見つからない。そのフォールバック。"""
+    path = _PROJECT_ROOT / ".streamlit" / "secrets.toml"
+    if not path.is_file():
+        return None
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return None
+    value = data.get("GEMINI_API_KEY")
+    return value or None
 
 
 def _resolve_api_key() -> str:
@@ -29,8 +50,12 @@ def _resolve_api_key() -> str:
     if key:
         return key
 
+    key = _key_from_project_secrets()
+    if key:
+        return key
+
     raise GeminiConfigError(
-        ".streamlit/secrets.toml の GEMINI_API_KEY、"
+        f"{_PROJECT_ROOT / '.streamlit' / 'secrets.toml'} の GEMINI_API_KEY、"
         "もしくは環境変数 GEMINI_API_KEY にAPIキーを設定してください。"
     )
 
